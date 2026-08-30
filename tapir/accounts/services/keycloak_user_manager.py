@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from allauth.socialaccount.models import SocialAccount
 from django.conf import settings
 from keycloak import KeycloakOpenIDConnection, KeycloakAdmin
+from keycloak.exceptions import KeycloakPostError
 
 from tapir.utils.shortcuts import get_from_cache_or_compute
 
@@ -13,6 +14,23 @@ if TYPE_CHECKING:
 
 
 class KeycloakUserManager:
+    @classmethod
+    def get_keycloak_id_by_email(
+        cls, keycloak_client: KeycloakAdmin, email: str
+    ) -> str | None:
+        """Look up a Keycloak user by email address.
+
+        Returns the Keycloak user ID (UUID), or None if no user has that email.
+        Note: Keycloak users may have a `username` that differs from `email`
+        (e.g. imported users with `username = customernumber`). Always look up
+        by email, never by `keycloak_client.get_user_id(email)` which queries
+        by `username`.
+        """
+        users = keycloak_client.get_users({"email": email, "exact": True})
+        if not users:
+            return None
+        return users[0]["id"]
+
     @classmethod
     def create_keycloak_user(
         cls,
@@ -29,7 +47,9 @@ class KeycloakUserManager:
             "enabled": True,
         }
 
-        keycloak_id = keycloak_client.get_user_id(user.email)
+        # Look up by email (not username) because imported KC users may have a
+        # different username (e.g. customernumber).
+        keycloak_id = cls.get_keycloak_id_by_email(keycloak_client, user.email)
         if keycloak_id is not None:
             user.keycloak_id = keycloak_id
             keycloak_client.update_user(user_id=user.keycloak_id, payload=data)
@@ -46,7 +66,18 @@ class KeycloakUserManager:
         else:
             data["groups"] = []
 
-        user.keycloak_id = keycloak_client.create_user(data)
+        try:
+            user.keycloak_id = keycloak_client.create_user(data)
+        except KeycloakPostError as e:
+            # Race / duplicate: another process created a user with the same
+            # email between our lookup and create. Re-fetch by email and reuse.
+            if e.response_code == 409:
+                keycloak_id = cls.get_keycloak_id_by_email(keycloak_client, user.email)
+                if keycloak_id is not None:
+                    user.keycloak_id = keycloak_id
+                    keycloak_client.update_user(user_id=user.keycloak_id, payload=data)
+                    return
+            raise
 
         if user.email.endswith("@example.com"):
             return
