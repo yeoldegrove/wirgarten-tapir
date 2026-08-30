@@ -46,6 +46,7 @@ THEME_AUERGARDEN = "aug"
 THEME_LANDLMUEHLE = "lnd"
 THEME_SCHINKELER_HOEFE = "sch"
 THEME_FALKENHOF = "fkh"
+THEME_SOLAWI_VIERLANDE = "solawi_vierlande"
 
 
 THEME_OPTIONS = [
@@ -67,6 +68,7 @@ THEME_OPTIONS = [
     (THEME_SCHINKELER_HOEFE, "Schinkeler Höfe"),
     (THEME_SOLAWI_ODERSCHWALBE, "Solawi Oderschwalbe"),
     (THEME_SOLAWI_HALL, "Solawi Hall"),
+    (THEME_SOLAWI_VIERLANDE, "Solawi Vierlande"),
     (THEME_WIRGARTEN, "WirGarten Lüneburg"),
     (THEME_TEST, "Test"),
 ]
