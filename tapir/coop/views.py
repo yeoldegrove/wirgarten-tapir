@@ -22,6 +22,8 @@ from tapir_mail.triggers.transactional_trigger import (
 from tapir.accounts.models import EmailChangeRequest, UpdateTapirUserLogEntry
 from tapir.configuration.parameter import get_parameter_value
 from tapir.coop.serializers import (
+    AdminImportMemberRequestSerializer,
+    AdminImportMemberResponseSerializer,
     MinimumNumberOfSharesResponseSerializer,
     GetCoopShareTransactionsResponseSerializer,
     ExistingMemberPurchasesSharesRequestSerializer,
@@ -29,6 +31,9 @@ from tapir.coop.serializers import (
     MemberBankDataResponseSerializer,
     MemberProfilePersonalDataResponseSerializer,
     MemberProfilePersonalDataRequestSerializer,
+)
+from tapir.coop.services.admin_import_member_service import (
+    AdminImportMemberService,
 )
 from tapir.coop.services.coop_membership_cancellation_manager import (
     CoopMembershipCancellationManager,
@@ -572,5 +577,40 @@ class MemberPersonalDataApiView(APIView):
         return Response(
             OrderConfirmationResponseSerializer(
                 {"order_confirmed": True, "error": None}
+            ).data
+        )
+
+
+class AdminImportMemberApiView(APIView):
+    """Admin-only direct DB import endpoint.
+
+    Bypasses the BestellWizard validator pipeline (``validate_phone_number_is_valid``
+    / ``validate_email_address_not_in_use``) and Keycloak sync, so admins can
+    import legacy data that would otherwise be rejected. No welcome / SEPA /
+    onboarding emails are sent — those have to be triggered out-of-band.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, HasCoopManagePermission]
+
+    @extend_schema(
+        request=AdminImportMemberRequestSerializer,
+        responses={200: AdminImportMemberResponseSerializer},
+    )
+    def post(self, request):
+        serializer = AdminImportMemberRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        member, was_existing = AdminImportMemberService.import_member(
+            validated_data=serializer.validated_data,
+            actor=request.user,
+        )
+
+        return Response(
+            AdminImportMemberResponseSerializer(
+                {
+                    "member_id": str(member.id),
+                    "was_existing": was_existing,
+                    "order_imported": True,
+                }
             ).data
         )
